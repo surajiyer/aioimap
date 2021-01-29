@@ -1,0 +1,1 @@
+aioimaplib>=0.7.18
