@@ -1,6 +1,7 @@
 from .message import Message
 # import asyncio
 from aioimaplib import aioimaplib
+import concurrent.futures
 import logging
 
 
@@ -32,7 +33,10 @@ class Receiver(object):
                         callback(Message(response.lines[1]))
 
                 self.idle = await self.imap_client.idle_start(timeout=self.IDLE_TIMEOUT)
-                msg = await self.imap_client.wait_server_push(timeout=self.IDLE_TIMEOUT)
+                try:
+                    msg = await self.imap_client.wait_server_push(timeout=self.IDLE_TIMEOUT)
+                except concurrent.futures.TimeoutError:
+                    msg = []
                 # logging.info(msg)
                 id = next((m.split()[0] for m in msg if " EXISTS" in m), None)
                 # response = await self.imap_client.select()
