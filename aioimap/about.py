@@ -1,5 +1,5 @@
 __title__ = 'aioimap'
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 __summary__ = 'Receive e-mails from an IMAP server asynchronously and trigger a callback with the message.'
 __uri__ = 'https://github.com/surajiyer/aioimap'
 __author__ = 'Suraj Iyer'
