@@ -15,7 +15,11 @@ readme_path = root / 'README.md'
 with readme_path.open('r', encoding='utf8') as f:
     readme = f.read()
 
-install_requires = ["aioimaplib>=0.7.18"]
+install_requires = [
+    "aioimaplib>=0.7.18",
+    "python-dotenv",
+    "fastapi>=0.61",
+    "uvicron>=0.12"]
 test_requires = []
 
 setup(
