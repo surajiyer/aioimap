@@ -27,6 +27,7 @@ def main(
     callback: callable = default_callable,
     mailbox: str = "INBOX",
     log_level: str = "INFO",
+    port: int = os.environ.get("PORT", 8080),
 ):
     if not (
         isinstance(host, str)
@@ -105,7 +106,7 @@ def main(
                         " not running."))
 
     # start the server
-    uvicorn.run(api, host="0.0.0.0", port=8080)
+    uvicorn.run(api, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
@@ -136,6 +137,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-l", "--log_level", default="INFO", help='Log level',
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"])
+    parser.add_argument("--port", default=8080, type=int, help='Port number')
     args = parser.parse_args()
 
     main(
@@ -145,4 +147,5 @@ if __name__ == "__main__":
         callback=import_from_string(args.app),
         mailbox=args.mailbox,
         log_level=args.log_level,
+        port=args.port,
     )
