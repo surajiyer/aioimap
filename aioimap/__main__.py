@@ -10,7 +10,7 @@ try:
     # Load environment variables from
     # .env file if available
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(os.path.join(os.getcwd(), ".env"))
 except:
     pass
 
@@ -90,8 +90,10 @@ def main(
                 and receiver.started
             ):
                 try:
-                    await asyncio.wait_for(
+                    response = await asyncio.wait_for(
                         receiver.imap_client.select(mailbox=mailbox), 5)
+                    if response.result != "OK":
+                        raise
                     return f"Switched to mailbox '{mailbox}'."
                 except:
                     raise HTTPException(
