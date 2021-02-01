@@ -59,7 +59,6 @@ def main(
                 mailbox=mailbox,
                 install_signal_handlers=False))
 
-
     @api.on_event("shutdown")
     async def on_shutdown():
         try:
@@ -70,11 +69,9 @@ def main(
             import traceback
             logging.error(traceback.format_exc())
 
-
     @api.get("/")
     def read_root():
         return {"message": "Welcome from the API."}
-
 
     @api.get("/change-mailbox")
     async def change_mailbox(mailbox: str):
@@ -88,7 +85,7 @@ def main(
         async with receiver.imap_client_lock:
             if (
                 hasattr(receiver, "imap_client")
-                and receiver.imap_client ifs not None
+                and receiver.imap_client is not None
                 and receiver.started
             ):
                 try:
@@ -106,7 +103,6 @@ def main(
                     detail=(
                         "IMAP client is not available or is"
                         " not running."))
-
 
     # start the server
     uvicorn.run(api, host="0.0.0.0", port=8080)

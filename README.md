@@ -7,7 +7,7 @@ aioimap requires:
 * aioimaplib (>=0.7.18)
 * python-dotenv
 * fastapi (>=0.61)
-* uvicron (>=0.12)
+* uvicorn (>=0.12)
 
 ## Usage
 Assume a project structure as so:  
@@ -37,8 +37,8 @@ python -m aioimap --host <EMAILSERVER> -u <EMAILID> -p <PWD> -a "app:callback"
 If you have a **.env** file in the same directory:
 ```
 SERVER=<EMAILSERVER>
-USER=<EMAILID>
-PASSWORD=<PWD>
+EMAIL=<EMAILID>
+PASS=<PWD>
 ```
 
 Then **Terminal (with .env file):**

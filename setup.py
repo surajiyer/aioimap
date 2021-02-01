@@ -19,7 +19,7 @@ install_requires = [
     "aioimaplib>=0.7.18",
     "python-dotenv",
     "fastapi>=0.61",
-    "uvicron>=0.12"]
+    "uvicorn>=0.12"]
 test_requires = []
 
 setup(

@@ -38,7 +38,7 @@ class Receiver(object):
         user: str,
         password: str,
         callback: Callable[[Message], Any],
-        mailbox = "INBOX",
+        mailbox: str = "INBOX",
         install_signal_handlers: bool = True,
     ):
         if install_signal_handlers:
@@ -68,7 +68,7 @@ class Receiver(object):
         return True
 
     async def main_loop(
-        self, callback: Callable[[Message], Any], mailbox = "INBOX",
+        self, callback: Callable[[Message], Any], mailbox: str = "INBOX",
     ):
         try:
             response = await asyncio.wait_for(
