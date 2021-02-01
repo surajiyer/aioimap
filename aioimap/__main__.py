@@ -1,6 +1,4 @@
-from .receiver import Receiver
-import asyncio
-from fastapi import FastAPI, HTTPException
+from .api import get_api
 import logging
 import os
 import uvicorn
@@ -29,85 +27,9 @@ def main(
     log_level: str = "INFO",
     port: int = os.environ.get("PORT", 8080),
 ):
-    if not (
-        isinstance(host, str)
-        and isinstance(user, str)
-        and isinstance(password, str)
-    ):
-        raise ValueError(
-            "`host`, `user`, `password` must be string type."
-            f" Found {(type(host), type(user), type(password))}"
-            " respectively.")
-    if not callable(callback):
-        raise ValueError(
-            "`callback` must be a callable object."
-            f" Found type {type(callback)}")
-
-    api = FastAPI()
-    receiver = None
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO))
-
-    @api.on_event("startup")
-    async def on_startup():
-        nonlocal receiver
-        receiver = Receiver(host)
-        asyncio.ensure_future(
-            receiver.run(
-                user,
-                password,
-                callback=callback,
-                mailbox=mailbox,
-                install_signal_handlers=False))
-
-    @api.on_event("shutdown")
-    async def on_shutdown():
-        try:
-            if receiver.started:
-                receiver.handle_exit(None, None)
-                await receiver.shutdown_event.wait()
-        except:
-            import traceback
-            logging.error(traceback.format_exc())
-
-    @api.get("/")
-    def read_root():
-        return {"message": "Welcome from the API."}
-
-    @api.get("/change-mailbox")
-    async def change_mailbox(mailbox: str):
-        if not (
-            isinstance(mailbox, str)
-            and len(mailbox) > 0
-        ):
-            raise HTTPException(
-                status_code=422, detail="Invalid input given.")
-
-        async with receiver.imap_client_lock:
-            if (
-                hasattr(receiver, "imap_client")
-                and receiver.imap_client is not None
-                and receiver.started
-            ):
-                try:
-                    response = await asyncio.wait_for(
-                        receiver.imap_client.select(mailbox=mailbox), 5)
-                    if response.result != "OK":
-                        raise
-                    return f"Switched to mailbox '{mailbox}'."
-                except:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Failure. Could not switch to mailbox"
-                        f"'{mailbox}'.")
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        "IMAP client is not available or is"
-                        " not running."))
-
-    # start the server
+    api = get_api(host, user, password, callback, mailbox)
     uvicorn.run(api, host="0.0.0.0", port=port)
 
 

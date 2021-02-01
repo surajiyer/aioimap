@@ -17,17 +17,16 @@ HANDLED_SIGNALS = (
 
 class Receiver(object):
 
-    def __init__(self, host: str, idle_timeout: int = 20):
+    def __init__(self, host: str, timeout: int = 20):
         if not (
-            isinstance(idle_timeout, int)
-            and idle_timeout > -1
+            isinstance(timeout, int)
+            and timeout > -1
         ):
             raise ValueError(
-                "`idle_timeout` must be non-negative integer.")
-        self.idle_timeout = idle_timeout
+                "`action_timeout` must be non-negative integer.")
         self.imap_client_lock = asyncio.Lock()
         self.imap_client = aioimaplib.IMAP4_SSL(
-            host=host, timeout=10)
+            host=host, timeout=timeout)
         self.started = False
         self.should_exit = False
         self.startup_event = asyncio.Event()
@@ -43,37 +42,56 @@ class Receiver(object):
     ):
         if install_signal_handlers:
             self.install_signal_handlers()
-        self.should_exit = not await self.login(user, password)
-        if self.should_exit:
-            return
-        await self.main_loop(callback, mailbox)
-        self.started = not self.logout()
-        if not self.started:
-            self.shutdown_event.set()
+        if await self.login(user, password):
+            await self.main_loop(callback, mailbox)
+            self.logout()
+        self.shutdown_event.set()
         self.started = False
 
     async def login(self, user: str, password: str):
         try:
-            await asyncio.wait_for(
-                self.imap_client.wait_hello_from_server(), 5)
-            response = await self.imap_client.login(user, password)
+            async with self.imap_client_lock:
+                await self.imap_client.wait_hello_from_server()
+                response = await self.imap_client.login(user, password)
             if response.result != "OK":
-                logging.error(
-                    f"Login failed! Result: {response.result}")
-                return False
+                raise RuntimeError("Login failed.")
             logging.info("Logged in as {}".format(user))
         except:
             logging.error(traceback.format_exc())
             return False
         return True
 
+    async def change_mailbox(self, mailbox: str):
+        if not (
+            isinstance(mailbox, str)
+            and len(mailbox) > 0
+        ):
+            raise ValueError(
+                "Invalid input. `mailbox` must"
+                " be a non-empty string.")
+
+        # add double-quotes around mailbox name if it contains
+        # spaces
+        mailbox = f'"{mailbox}"' if " " in mailbox else mailbox
+
+        async with self.imap_client_lock:
+            response = await self.imap_client.select(mailbox=mailbox)
+        if response.result != "OK":
+            raise RuntimeError(
+                f"Selecting mailbox '{mailbox}' failed!")
+        return response
+
     async def main_loop(
         self, callback: Callable[[Message], Any], mailbox: str = "INBOX",
     ):
         try:
-            response = await asyncio.wait_for(
-                self.imap_client.select(mailbox=mailbox), 5)
+            # select the mailbox
+            response = await self.change_mailbox(mailbox)
+
+            # get ID of latest message
             id = aioimaplib.extract_exists(response)
+
+            # start waiting for new messages
             self.started = True
             self.startup_event.set()
             while not self.should_exit:
@@ -95,10 +113,13 @@ class Receiver(object):
                     callback(Message(response.lines[1]))
 
             # wait for new messages
-            await self.imap_client.idle_start(self.idle_timeout)
+            # the timeout here must be shorter than the
+            # imap client timeout
+            await self.imap_client.idle_start(
+                timeout=min(5, self.imap_client.timeout))
             try:
                 msg = await self.imap_client.wait_server_push(
-                    timeout=self.idle_timeout)
+                    timeout=self.imap_client.timeout)
             except concurrent.futures.TimeoutError:
                 msg = []
 
@@ -108,7 +129,8 @@ class Receiver(object):
                 if " EXISTS" in m), None)
 
             # Send IDLE done message to server
-            self.imap_client.idle_done()
+            if self.imap_client.has_pending_idle():
+                self.imap_client.idle_done()
 
         return id
 
