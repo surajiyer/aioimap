@@ -50,12 +50,17 @@ class Receiver(object):
         self.started = not self.logout()
         if not self.started:
             self.shutdown_event.set()
+        self.started = False
 
     async def login(self, user: str, password: str):
         try:
             await asyncio.wait_for(
                 self.imap_client.wait_hello_from_server(), 5)
-            await self.imap_client.login(user, password)
+            response = await self.imap_client.login(user, password)
+            if response.result != "OK":
+                logging.error(
+                    f"Login failed! Result: {response.result}")
+                return False
             logging.info("Logged in as {}".format(user))
         except:
             logging.error(traceback.format_exc())

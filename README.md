@@ -5,47 +5,44 @@ Receive e-mails from an IMAP server asynchronously and trigger a callback with t
 aioimap requires:
 * Python (>=3.7)
 * aioimaplib (>=0.7.18)
+* python-dotenv
+* fastapi (>=0.61)
+* uvicron (>=0.12)
 
 ## Usage
-
+Assume a project structure as so:  
 ```
-from aioimap import Receiver
-import asyncio
-import logging
-import os
+project  
+|  
+|--app.py  
+|--.env  
+```
 
+**app.py:**
+```
+from aioimap import Message
 
-# initialize logging
-log_configs = {
-    "level"     : logging.INFO,
-    "format"    : '%(asctime)s %(filename)s:%(lineno)d %(levelname)s  %(message)s',
-    "datefmt"   : '%Y-%m-%d %X'
-}
-logging.basicConfig(**log_configs)
+def callback(m: Message):
+    print("Subject: {}".format(m.subject))
+    print("Sender: {}".format(m.sender))
+    # do some other fun stuff
+```
 
+**Terminal (without .env file):**
+```
+cd path/to/project
+python -m aioimap --host <EMAILSERVER> -u <EMAILID> -p <PWD> -a "app:callback"
+```
 
-def app(msg):
-    logging.info(f"Subject: {msg.subject}")
-    logging.info(f"Sender: {msg.sender}")
+If you have a **.env** file in the same directory:
+```
+SERVER=<EMAILSERVER>
+USER=<EMAILID>
+PASSWORD=<PWD>
+```
 
-
-if __name__ == "__main__":
-    receiver = Receiver()
-    loop = asyncio.get_event_loop()
-
-    try:
-        # for outlook.com
-        # imap_server = "imap-mail.outlook.com"
-        # imap_port = 993
-        # smtp_server = "smtp-mail.outlook.com"
-        # smtp_port = 587
-        asyncio.run(receiver.wait_for_new_message(
-            host=os.environ['SERVER'],
-            user=os.environ['EMAIL'],
-            password=os.environ['PASS'],
-            callback=app,
-            mailbox='INBOX'))
-    except KeyboardInterrupt:
-        pass
-    loop.close()
+Then **Terminal (with .env file):**
+```
+cd path/to/project
+python -m aioimap -a "app:callback"
 ```

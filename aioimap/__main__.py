@@ -37,7 +37,7 @@ def main(
             "`host`, `user`, `password` must be string type."
             f" Found {(type(host), type(user), type(password))}"
             " respectively.")
-    if not isinstance(callback, callable):
+    if not callable(callback):
         raise ValueError(
             "`callback` must be a callable object."
             f" Found type {type(callback)}")
@@ -63,8 +63,9 @@ def main(
     @api.on_event("shutdown")
     async def on_shutdown():
         try:
-            receiver.handle_exit(None, None)
-            await receiver.shutdown_event.wait()
+            if receiver.started:
+                receiver.handle_exit(None, None)
+                await receiver.shutdown_event.wait()
         except:
             import traceback
             logging.error(traceback.format_exc())
@@ -87,13 +88,13 @@ def main(
         async with receiver.imap_client_lock:
             if (
                 hasattr(receiver, "imap_client")
-                and receiver.imap_client is not None
+                and receiver.imap_client ifs not None
+                and receiver.started
             ):
                 try:
                     await asyncio.wait_for(
                         receiver.imap_client.select(mailbox=mailbox), 5)
-                    app.mailbox = mailbox
-                    return f"Switched to mailbox '{app.mailbox}'."
+                    return f"Switched to mailbox '{mailbox}'."
                 except:
                     raise HTTPException(
                         status_code=500,
@@ -102,7 +103,9 @@ def main(
             else:
                 raise HTTPException(
                     status_code=500,
-                    detail="IMAP client is not available.")
+                    detail=(
+                        "IMAP client is not available or is"
+                        " not running."))
 
 
     # start the server
@@ -126,7 +129,7 @@ if __name__ == "__main__":
         "-p", "--pwd", default=os.environ.get("PASS", None),
         help='Email ID password')
     parser.add_argument(
-        "-a", "--app", default="main:default_callable",
+        "-a", "--app", default="__main__:default_callable",
         help=(
             '"app" must be a string in format "<module>:<attribute>"'
             ' where attribute must be a callable. This will be used'
