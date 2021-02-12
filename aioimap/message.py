@@ -5,8 +5,7 @@ from email.header import decode_header
 class Message(object):
 
     def __init__(self, msg):
-        msg = email.message_from_bytes(msg)
-        self.msg = msg
+        self.msg = email.message_from_bytes(msg)
 
     @property
     def subject(self):
@@ -25,3 +24,23 @@ class Message(object):
             encoding = 'utf-8' if encoding is None else encoding
             sender = sender.decode(encoding)
         return sender
+
+    @property
+    def content(self):
+        # https://humberto.io/blog/sending-and-receiving-emails-with-python/
+        if self.msg.is_multipart():
+            mail_content = ''
+
+            # on multipart we have the text message and
+            # another things like annex, and html version
+            # of the message, in that case we loop through
+            # the email payload
+            mail_content = " ".join(
+                part.get_payload()
+                for part in self.msg.get_payload()
+                if part.get_content_type() == 'text/plain')
+        else:
+            # if the message isn't multipart, just extract it
+            mail_content = self.msg.get_payload()
+
+        return mail_content

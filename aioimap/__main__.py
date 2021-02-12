@@ -16,6 +16,7 @@ except:
 def default_callable(m):
     logging.info(f"Subject: {m.subject}")
     logging.info(f"Sender: {m.sender}")
+    logging.info(f"Content: {m.content}")
 
 
 def main(

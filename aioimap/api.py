@@ -61,7 +61,15 @@ def get_api(
 
     @api.get("/")
     def read_root():
-        return {"message": "Welcome from the API."}
+        try:
+            if receiver.started:
+                return {"message": "Receiver started."}
+            else:
+                return {"message": "Receiver shutdown."}
+
+        except:
+            import traceback
+            logging.error(traceback.format_exc())
 
     @api.get("/change-mailbox")
     async def change_mailbox(mailbox: str):

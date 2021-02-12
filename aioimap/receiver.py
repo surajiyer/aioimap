@@ -17,16 +17,9 @@ HANDLED_SIGNALS = (
 
 class Receiver(object):
 
-    def __init__(self, host: str, timeout: int = 20):
-        if not (
-            isinstance(timeout, int)
-            and timeout > -1
-        ):
-            raise ValueError(
-                "`action_timeout` must be non-negative integer.")
+    def __init__(self, host: str):
+        self.imap_client = aioimaplib.IMAP4_SSL(host=host)
         self.imap_client_lock = asyncio.Lock()
-        self.imap_client = aioimaplib.IMAP4_SSL(
-            host=host, timeout=timeout)
         self.started = False
         self.should_exit = False
         self.startup_event = asyncio.Event()
@@ -40,15 +33,25 @@ class Receiver(object):
         mailbox: str = "INBOX",
         install_signal_handlers: bool = True,
     ):
+        """
+        Start running the main receiver loop.
+        """
         if install_signal_handlers:
             self.install_signal_handlers()
         if await self.login(user, password):
-            await self.main_loop(callback, mailbox)
+            try:
+                await self.wait_for_new_message(callback, mailbox)
+            except:
+                logging.error(traceback.format_exc())
+                logging.info("Graceful shutdown")
             self.logout()
         self.shutdown_event.set()
         self.started = False
 
     async def login(self, user: str, password: str):
+        """
+        Login to the IMAP server.
+        """
         try:
             async with self.imap_client_lock:
                 await self.imap_client.wait_hello_from_server()
@@ -62,6 +65,9 @@ class Receiver(object):
         return True
 
     async def change_mailbox(self, mailbox: str):
+        """
+        Switch to another mailbox.
+        """
         if not (
             isinstance(mailbox, str)
             and len(mailbox) > 0
@@ -79,62 +85,79 @@ class Receiver(object):
         if response.result != "OK":
             raise RuntimeError(
                 f"Selecting mailbox '{mailbox}' failed!")
+        else:
+            logging.info(f"Selected mailbox '{mailbox}'")
         return response
 
-    async def main_loop(
-        self, callback: Callable[[Message], Any], mailbox: str = "INBOX",
-    ):
-        try:
-            # select the mailbox
-            response = await self.change_mailbox(mailbox)
-
-            # get ID of latest message
-            id = aioimaplib.extract_exists(response)
-
-            # start waiting for new messages
-            self.started = True
-            self.startup_event.set()
-            while not self.should_exit:
-                id = await self.wait_for_new_message(callback, id)
-        except:
-            logging.error(traceback.format_exc())
-            logging.info("Graceful shutdown")
+    async def search_unseen(self):
+        """
+        Get IDs of unseen messages in the current mailbox.
+        URL: https://tools.ietf.org/html/rfc3501#section-6.4.4
+        """
+        unseen_ids = []
+        status, response = await self.imap_client.search("(UNSEEN)", charset=None)
+        if status == "OK":
+            unseen_ids.extend(response[0].split())
+            logging.info(f"Number of unseen messages: {len(unseen_ids)}")
+        else:
+            logging.error(f"Search for unseen messages completed with status: {status}")
+        return unseen_ids
 
     async def wait_for_new_message(
-        self, callback: Callable[[Message], Any], id: str = None,
+        self, callback: Callable[[Message], Any], mailbox: str = "INBOX",
     ):
-        async with self.imap_client_lock:
-            # if new message is available, then fetch
-            # it and let the callback handle it
-            if id:
-                response = await self.imap_client.fetch(
-                    str(id), "(RFC822)")
-                if len(response.lines) > 1:
-                    callback(Message(response.lines[1]))
+        """
+        Receiver main loop.
+        """
+        # select the mailbox
+        # response = await self.change_mailbox(mailbox)
+        await self.change_mailbox(mailbox)
 
-            # wait for new messages
-            # the timeout here must be shorter than the
-            # imap client timeout
-            await self.imap_client.idle_start(
-                timeout=min(5, self.imap_client.timeout))
-            try:
-                msg = await self.imap_client.wait_server_push(
-                    timeout=self.imap_client.timeout)
-            except concurrent.futures.TimeoutError:
-                msg = []
+        # get the id of the latest message
+        # id = aioimaplib.extract_exists(response)
 
-            # get message ID
-            id = next((
-                m.split()[0] for m in msg
-                if " EXISTS" in m), None)
+        # start waiting for new messages
+        self.started = True
+        self.startup_event.set()
 
-            # Send IDLE done message to server
-            if self.imap_client.has_pending_idle():
-                self.imap_client.idle_done()
+        # if new messages are available, fetch
+        # them and let the callback handle it
+        for id in await self.search_unseen():
+            response = await self.imap_client.fetch(
+                str(id), "(RFC822)")
+            if len(response.lines) > 1:
+                callback(Message(response.lines[1]))
 
-        return id
+        while not self.should_exit:
+            async with self.imap_client_lock:
+                # wait for status update
+                await self.imap_client.idle_start()
+                try:
+                    msg = await self.imap_client.wait_server_push()
+                except concurrent.futures.TimeoutError:
+                    msg = []
+
+                # send IDLE done to server
+                # this has to happen before search command
+                # for some reason - DO NOT MOVE IT!
+                if self.imap_client.has_pending_idle():
+                    self.imap_client.idle_done()
+
+                # https://tools.ietf.org/html/rfc3501#section-7.3.1
+                # EXISTS response occurs when size of the mailbox changes
+                if any("EXISTS" in m for m in msg):
+                    # if new messages are available, fetch
+                    # them and let the callback handle it
+                    for id in await self.search_unseen():
+                        response = await self.imap_client.fetch(
+                            str(id), "(RFC822)")
+                        if len(response.lines) > 1:
+                            callback(Message(response.lines[1]))
 
     def logout(self):
+        """
+        Logout from the IMAP server.
+        """
         try:
             if self.imap_client.has_pending_idle():
                 # send IDLE done message to server
@@ -147,6 +170,11 @@ class Receiver(object):
         return True
 
     def install_signal_handlers(self):
+        """
+        Install signal handlers to shut down
+        the receiver main loop when SIGINT / SIGTERM
+        signals are received.
+        """
         if threading.current_thread() is not threading.main_thread():
             # Signals can only be listened to from the main thread.
             return
@@ -162,5 +190,9 @@ class Receiver(object):
                 signal.signal(sig, self.handle_exit)
 
     def handle_exit(self, sig, frame):
+        """
+        Handle exiting the receiver main loop.
+        """
         if not self.should_exit:
+            asyncio.ensure_future(self.imap_client.stop_wait_server_push())
             self.should_exit = True
