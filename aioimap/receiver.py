@@ -1,7 +1,7 @@
 from .message import Message
 import asyncio
 from aioimaplib import aioimaplib
-import concurrent.futures
+from concurrent.futures import TimeoutError
 import logging
 import signal
 import threading
@@ -130,22 +130,39 @@ class Receiver(object):
 
         while not self.should_exit:
             async with self.imap_client_lock:
-                # wait for status update
-                await self.imap_client.idle_start()
-                try:
-                    msg = await self.imap_client.wait_server_push()
-                except concurrent.futures.TimeoutError:
-                    msg = []
+                # start IDLE waiting
+                # idle queue must be empty, otherwise we get race
+                # conditions between idle command status update
+                # and unsolicited server messages
+                if (
+                    (not self.imap_client.has_pending_idle())
+                    and self.imap_client.protocol.idle_queue.empty()
+                ):
+                    logging.debug("Start IDLE waiting")
+                    idle = await self.imap_client.idle_start()
 
-                # send IDLE done to server
-                # this has to happen before search command
-                # for some reason - DO NOT MOVE IT!
-                if self.imap_client.has_pending_idle():
-                    self.imap_client.idle_done()
+                try:
+                    # wait for status update
+                    msg = await self.imap_client.wait_server_push()
+                    logging.debug(f"Received IDLE message: {msg}")
+
+                    # send IDLE done to server; this has to happen
+                    # before search or fetch or any other command
+                    # for some reason.
+                    # https://tools.ietf.org/html/rfc2177
+                    if self.imap_client.has_pending_idle():
+                        logging.debug("Send IDLE done")
+                        self.imap_client.idle_done()
+                        await asyncio.wait_for(idle, 10)
+                except TimeoutError:
+                    logging.error(traceback.format_exc())
+                    msg = []
 
                 # https://tools.ietf.org/html/rfc3501#section-7.3.1
                 # EXISTS response occurs when size of the mailbox changes
-                if any("EXISTS" in m for m in msg):
+                if isinstance(msg, list) and any("EXISTS" in m for m in msg):
+                    logging.debug("Mailbox size changed")
+
                     # if new messages are available, fetch
                     # them and let the callback handle it
                     for id in await self.search_unseen():
@@ -153,6 +170,8 @@ class Receiver(object):
                             str(id), "(RFC822)")
                         if len(response.lines) > 1:
                             callback(Message(response.lines[1]))
+
+                logging.debug("Loop complete")
 
     def logout(self):
         """
