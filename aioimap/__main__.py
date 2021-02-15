@@ -14,10 +14,14 @@ except:
 
 
 def default_callable(m):
-    logging.info(f"Subject: {m.subject}")
-    logging.info(f"Sender: {m.sender}")
-    # content can be big, so only display in debug mode
-    logging.debug(f"Content: {m.content}")
+    from .receiver import RECEIVER_STOPPED
+    if m == RECEIVER_STOPPED:
+        logging.info(m)
+    else:
+        logging.info(f"Subject: {m.subject}")
+        logging.info(f"Sender: {m.sender}")
+        # content can be big, so only display in debug mode
+        logging.debug(f"Content: {m.content}")
 
 
 def main(

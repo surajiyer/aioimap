@@ -39,9 +39,10 @@ def get_api(
     @api.on_event("startup")
     async def on_startup():
         nonlocal receiver
-        receiver = Receiver(host)
+        receiver = Receiver()
         asyncio.ensure_future(
             receiver.run(
+                host,
                 user,
                 password,
                 callback=callback,
@@ -51,10 +52,9 @@ def get_api(
     @api.on_event("shutdown")
     async def on_shutdown():
         try:
-            if receiver.started:
+            if not receiver.exit_event.is_set():
                 receiver.handle_exit(None, None)
-                await receiver.shutdown_event.wait()
-
+                await receiver.exit_event.wait()
         except:
             import traceback
             logging.error(traceback.format_exc())
@@ -62,10 +62,10 @@ def get_api(
     @api.get("/")
     def read_root():
         try:
-            if receiver.started:
-                return {"message": "Receiver started."}
+            if receiver.exit_event.is_set():
+                return {"message": "Receiver not running."}
             else:
-                return {"message": "Receiver shutdown."}
+                return {"message": "Receiver running."}
 
         except:
             import traceback
@@ -77,8 +77,8 @@ def get_api(
             if (
                 hasattr(receiver, "imap_client")
                 and receiver.imap_client is not None
-                and receiver.started
-                and not receiver.should_exit
+                and not receiver.exit_event.is_set()
+                and not receiver.should_exit.is_set()
             ):
                 await receiver.change_mailbox(mailbox)
 
